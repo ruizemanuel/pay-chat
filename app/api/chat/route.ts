@@ -50,6 +50,11 @@ export async function POST(request: Request) {
     });
   }
 
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[x402] paymentReceipt:", JSON.stringify(settlement.paymentReceipt, null, 2));
+    console.log("[x402] responseHeaders:", JSON.stringify(settlement.responseHeaders, null, 2));
+  }
+
   let llmResult;
   try {
     llmResult = await callLlm(body.messages, body.model);

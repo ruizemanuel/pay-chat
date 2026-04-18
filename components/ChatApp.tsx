@@ -17,19 +17,49 @@ type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  txHash?: string;
+  receiptUrl?: string;
 };
 
 type ChatResponse = {
   content: string;
-  paymentReceipt?: { transaction?: string; txHash?: string } & Record<string, unknown>;
+  paymentReceipt?: {
+    transaction?: string;
+    txHash?: string;
+    network?: string;
+  } & Record<string, unknown>;
 };
 
-function extractTxHash(receipt: ChatResponse["paymentReceipt"]): string | undefined {
+const CELO_MAINNET_NETWORKS = new Set(["celo", "eip155:42220", "42220"]);
+const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+
+function extractReceipt(
+  receipt: ChatResponse["paymentReceipt"],
+): { hash: string; network: string } | undefined {
   if (!receipt) return undefined;
-  if (typeof receipt.transaction === "string") return receipt.transaction;
-  if (typeof receipt.txHash === "string") return receipt.txHash;
-  return undefined;
+  const candidate =
+    typeof receipt.transaction === "string" && receipt.transaction.length > 0
+      ? receipt.transaction
+      : typeof receipt.txHash === "string" && receipt.txHash.length > 0
+        ? receipt.txHash
+        : undefined;
+  if (!candidate || !TX_HASH_PATTERN.test(candidate)) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[pay-chat] paymentReceipt missing valid transaction hash", receipt);
+    }
+    return undefined;
+  }
+  const network = typeof receipt.network === "string" ? receipt.network : "celo";
+  return { hash: candidate, network };
+}
+
+function explorerUrl(hash: string, network: string): string {
+  if (CELO_MAINNET_NETWORKS.has(network)) {
+    return `https://celoscan.io/tx/${hash}`;
+  }
+  if (network === "celo-sepolia" || network === "eip155:11142220" || network === "11142220") {
+    return `https://sepolia.celoscan.io/tx/${hash}`;
+  }
+  return `https://celoscan.io/tx/${hash}`;
 }
 
 export function ChatApp() {
@@ -72,13 +102,14 @@ export function ChatApp() {
       }
 
       const data = (await response.json()) as ChatResponse;
+      const receipt = extractReceipt(data.paymentReceipt);
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "assistant",
           content: data.content,
-          txHash: extractTxHash(data.paymentReceipt),
+          receiptUrl: receipt ? explorerUrl(receipt.hash, receipt.network) : undefined,
         },
       ]);
     } catch (err) {
@@ -203,9 +234,9 @@ function MessageBubble({ message }: { message: Message }) {
         >
           {message.content}
         </div>
-        {message.txHash ? (
+        {message.receiptUrl ? (
           <a
-            href={`https://celoscan.io/tx/${message.txHash}`}
+            href={message.receiptUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 self-start text-[11px] text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
