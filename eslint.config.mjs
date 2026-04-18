@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Hardhat-generated and contract-side code — linted via hardhat's own tools
+    "typechain-types/**",
+    "artifacts/**",
+    "cache/**",
+    "scripts/**",
+    "test/contracts/**",
+    "hardhat.config.ts",
   ]),
 ]);
 

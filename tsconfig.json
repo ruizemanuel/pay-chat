@@ -30,5 +30,20 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "hardhat.config.ts",
+    "test/contracts/**",
+    "scripts/**",
+    "artifacts/**",
+    "cache/**",
+    "typechain-types/**"
+  ],
+  "ts-node": {
+    "compilerOptions": {
+      "module": "commonjs",
+      "target": "es2022",
+      "moduleResolution": "node"
+    }
+  }
 }
