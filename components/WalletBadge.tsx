@@ -10,7 +10,7 @@ function truncate(address: string) {
 
 export function WalletBadge() {
   const isMounted = useIsMounted();
-  const { address, isConnected, chainId } = useAccount();
+  const { address, isConnected } = useAccount();
   const connectors = useConnectors();
   const { connect, isPending } = useConnect();
 
@@ -23,7 +23,6 @@ export function WalletBadge() {
       <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
         <IconWallet size={14} />
         <span className="font-mono">{truncate(address)}</span>
-        <span className="text-emerald-600/70 dark:text-emerald-400/70">· {chainId}</span>
       </span>
     );
   }
