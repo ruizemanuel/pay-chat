@@ -4,7 +4,7 @@ import { callLlm, preflightLlm, type ChatMessage } from "@/lib/llm";
 import { logPromptReceipt } from "@/lib/prompt-receipt";
 import {
   paymentNetwork,
-  pricePerQueryUsd,
+  pricePerQuery,
   serverWalletAddress,
   thirdwebFacilitator,
   thirdwebServerClient,
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     paymentData,
     payTo: serverWalletAddress,
     network: paymentNetwork,
-    price: pricePerQueryUsd,
+    price: pricePerQuery,
     facilitator: thirdwebFacilitator,
     routeConfig: {
       description: "AI chat completion (multi-provider routed)",
