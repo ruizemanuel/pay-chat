@@ -5,6 +5,7 @@ import { injected } from "wagmi/connectors";
 export const wagmiConfig = createConfig({
   chains: [celo, celoSepolia],
   connectors: [injected()],
+  ssr: true,
   transports: {
     [celo.id]: http(),
     [celoSepolia.id]: http(),
