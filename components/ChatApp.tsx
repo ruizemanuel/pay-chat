@@ -199,11 +199,11 @@ function EmptyState({ isMiniPay }: { isMiniPay: boolean }) {
         Pick any question. We route it to the best model and charge a couple of cents in
         stablecoin — no subscription, no signup.
       </p>
-      {!isMiniPay ? (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
-          Open this app inside MiniPay for the full experience.
-        </p>
-      ) : null}
+      <p className="text-xs text-zinc-400">
+        {isMiniPay
+          ? "Connected via MiniPay. Type a question to get started."
+          : "Connect a wallet on Celo to start. Each answer settles onchain."}
+      </p>
     </div>
   );
 }
