@@ -1,16 +1,36 @@
 "use client";
 
-import { IconRobot, IconSend2, IconUser } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconExternalLink,
+  IconRobot,
+  IconSend2,
+  IconUser,
+} from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { useAutoConnect } from "@/hooks/useAutoConnect";
 import { useIsMiniPay } from "@/hooks/useIsMiniPay";
+import { payAndFetch, WalletNotAvailableError } from "@/lib/payments";
 import { WalletBadge } from "./WalletBadge";
 
 type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  txHash?: string;
 };
+
+type ChatResponse = {
+  content: string;
+  paymentReceipt?: { transaction?: string; txHash?: string } & Record<string, unknown>;
+};
+
+function extractTxHash(receipt: ChatResponse["paymentReceipt"]): string | undefined {
+  if (!receipt) return undefined;
+  if (typeof receipt.transaction === "string") return receipt.transaction;
+  if (typeof receipt.txHash === "string") return receipt.txHash;
+  return undefined;
+}
 
 export function ChatApp() {
   const isMiniPay = useIsMiniPay();
@@ -18,17 +38,60 @@ export function ChatApp() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed) return;
-    setMessages((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), role: "user", content: trimmed },
-    ]);
+    if (!trimmed || isSending) return;
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: trimmed,
+    };
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
     setInput("");
-    // TODO(day-3): POST /api/chat with 402 payment flow
+    setError(null);
+    setIsSending(true);
+
+    try {
+      const response = await payAndFetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: nextMessages.map(({ role, content }) => ({ role, content })),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload.error ?? `Request failed (${response.status})`);
+      }
+
+      const data = (await response.json()) as ChatResponse;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: data.content,
+          txHash: extractTxHash(data.paymentReceipt),
+        },
+      ]);
+    } catch (err) {
+      const message =
+        err instanceof WalletNotAvailableError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Something went wrong";
+      setError(message);
+    } finally {
+      setIsSending(false);
+    }
   }
 
   return (
@@ -49,8 +112,15 @@ export function ChatApp() {
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
+            {isSending ? <TypingIndicator /> : null}
           </ul>
         )}
+        {error ? (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            <IconAlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        ) : null}
       </main>
 
       <form
@@ -69,11 +139,12 @@ export function ChatApp() {
             placeholder="Ask anything…"
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            className="flex-1 rounded-full border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none transition focus:border-zinc-400 focus:bg-white dark:border-zinc-800 dark:bg-zinc-900 dark:focus:bg-zinc-900"
+            disabled={isSending}
+            className="flex-1 rounded-full border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none transition focus:border-zinc-400 focus:bg-white disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:focus:bg-zinc-900"
           />
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() || isSending}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 dark:disabled:bg-zinc-700"
             aria-label="Send"
           >
@@ -114,20 +185,58 @@ function MessageBubble({ message }: { message: Message }) {
     <li className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
       <span
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-          isUser ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900" : "bg-zinc-200 dark:bg-zinc-800"
+          isUser
+            ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+            : "bg-zinc-200 dark:bg-zinc-800"
         }`}
         aria-hidden="true"
       >
         {isUser ? <IconUser size={16} /> : <IconRobot size={16} />}
       </span>
-      <div
-        className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-          isUser
-            ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-            : "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
-        }`}
-      >
-        {message.content}
+      <div className="flex max-w-[80%] flex-col gap-1">
+        <div
+          className={`whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+            isUser
+              ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+              : "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
+          }`}
+        >
+          {message.content}
+        </div>
+        {message.txHash ? (
+          <a
+            href={`https://celoscan.io/tx/${message.txHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 self-start text-[11px] text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            <span>View receipt on Celoscan</span>
+            <IconExternalLink size={12} />
+          </a>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <li className="flex gap-2" aria-live="polite">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800">
+        <IconRobot size={16} />
+      </span>
+      <div className="rounded-2xl bg-zinc-100 px-3.5 py-2 text-sm text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+        <span className="inline-flex items-center gap-1">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+          <span
+            className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"
+            style={{ animationDelay: "150ms" }}
+          />
+          <span
+            className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"
+            style={{ animationDelay: "300ms" }}
+          />
+        </span>
       </div>
     </li>
   );
