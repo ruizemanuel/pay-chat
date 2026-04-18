@@ -24,7 +24,7 @@ type ChatResponse = {
   content: string;
   paymentReceipt?: {
     transaction?: string;
-    txHash?: string;
+    transactionHash?: string;
     network?: string;
   } & Record<string, unknown>;
 };
@@ -36,15 +36,13 @@ function extractReceipt(
   receipt: ChatResponse["paymentReceipt"],
 ): { hash: string; network: string } | undefined {
   if (!receipt) return undefined;
-  const candidate =
-    typeof receipt.transaction === "string" && receipt.transaction.length > 0
-      ? receipt.transaction
-      : typeof receipt.txHash === "string" && receipt.txHash.length > 0
-        ? receipt.txHash
-        : undefined;
-  if (!candidate || !TX_HASH_PATTERN.test(candidate)) {
+  const candidate = receipt.transactionHash ?? receipt.transaction;
+  if (typeof candidate !== "string" || !TX_HASH_PATTERN.test(candidate)) {
     if (process.env.NODE_ENV !== "production") {
-      console.warn("[pay-chat] paymentReceipt missing valid transaction hash", receipt);
+      console.warn(
+        "[pay-chat] paymentReceipt missing valid onchain hash",
+        receipt,
+      );
     }
     return undefined;
   }

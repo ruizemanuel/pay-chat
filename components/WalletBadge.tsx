@@ -2,15 +2,17 @@
 
 import { IconWallet } from "@tabler/icons-react";
 import { useAccount } from "wagmi";
+import { useIsMounted } from "@/hooks/useIsMounted";
 
 function truncate(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
 export function WalletBadge() {
+  const isMounted = useIsMounted();
   const { address, isConnected, chainId } = useAccount();
 
-  if (!isConnected || !address) {
+  if (!isMounted || !isConnected || !address) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
         <IconWallet size={14} />

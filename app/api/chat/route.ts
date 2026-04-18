@@ -1,3 +1,4 @@
+import { Engine } from "thirdweb";
 import { settlePayment } from "thirdweb/x402";
 import { callLlm, type ChatMessage } from "@/lib/llm";
 import {
@@ -5,6 +6,7 @@ import {
   pricePerQueryUsd,
   serverWalletAddress,
   thirdwebFacilitator,
+  thirdwebServerClient,
 } from "@/lib/x402-server";
 
 export const runtime = "nodejs";
@@ -51,16 +53,29 @@ export async function POST(request: Request) {
   }
 
   if (process.env.NODE_ENV !== "production") {
-    console.log("[x402] paymentReceipt:", JSON.stringify(settlement.paymentReceipt, null, 2));
-    console.log("[x402] responseHeaders:", JSON.stringify(settlement.responseHeaders, null, 2));
+    console.log(
+      "[x402] paymentReceipt:",
+      JSON.stringify(settlement.paymentReceipt, null, 2),
+    );
   }
 
-  let llmResult;
-  try {
-    llmResult = await callLlm(body.messages, body.model);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "llm_unknown_error";
-    return Response.json({ error: "llm_failed", detail: message }, { status: 502 });
+  // The facilitator returns an Engine queueId in `transaction`, not the
+  // onchain hash. Resolve to the real hash in parallel with the LLM call so
+  // the user sees a verifiable Celoscan receipt.
+  const queueId = settlement.paymentReceipt.transaction;
+
+  const [llmResult, transactionHash] = await Promise.all([
+    callLlm(body.messages, body.model).catch((error: unknown) => ({
+      error: error instanceof Error ? error.message : "llm_unknown_error",
+    })),
+    resolveOnchainHash(queueId),
+  ]);
+
+  if ("error" in llmResult) {
+    return Response.json(
+      { error: "llm_failed", detail: llmResult.error },
+      { status: 502 },
+    );
   }
 
   return Response.json(
@@ -68,8 +83,27 @@ export async function POST(request: Request) {
       content: llmResult.content,
       model: llmResult.model,
       provider: llmResult.provider,
-      paymentReceipt: settlement.paymentReceipt,
+      paymentReceipt: {
+        ...settlement.paymentReceipt,
+        transactionHash,
+      },
     },
     { headers: settlement.responseHeaders },
   );
+}
+
+async function resolveOnchainHash(queueId: string): Promise<string | undefined> {
+  try {
+    const result = await Engine.waitForTransactionHash({
+      client: thirdwebServerClient,
+      transactionId: queueId,
+      timeoutInSeconds: 20,
+    });
+    return result.transactionHash;
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[x402] waitForTransactionHash failed", error);
+    }
+    return undefined;
+  }
 }
