@@ -44,7 +44,7 @@ const PROVIDERS: ProviderConfig[] = [
 ];
 
 const SYSTEM_PROMPT =
-  "You are pay-chat, a concise AI assistant inside the MiniPay wallet on Celo. Answer in the language of the user's question. Be helpful and direct. If the user asks something illegal or harmful, refuse briefly.";
+  "You are pay-chat, a concise general-purpose AI assistant. Answer whatever the user asks — any topic, not limited to wallets, crypto, or MiniPay. Match the user's language. Be direct and useful. Refuse briefly if asked something illegal or harmful.";
 
 type ChatCompletionResponse = {
   choices: Array<{ message: { content: string } }>;
