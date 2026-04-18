@@ -1,6 +1,7 @@
 import { Engine } from "thirdweb";
 import { settlePayment } from "thirdweb/x402";
 import { callLlm, type ChatMessage } from "@/lib/llm";
+import { logPromptReceipt } from "@/lib/prompt-receipt";
 import {
   paymentNetwork,
   pricePerQueryUsd,
@@ -76,6 +77,17 @@ export async function POST(request: Request) {
       { error: "llm_failed", detail: llmResult.error },
       { status: 502 },
     );
+  }
+
+  const payer = settlement.paymentReceipt.payer;
+  const latestUserPrompt =
+    body.messages[body.messages.length - 1]?.content ?? "";
+  if (payer && latestUserPrompt) {
+    logPromptReceipt({
+      user: payer,
+      model: `${llmResult.provider}/${llmResult.model}`,
+      prompt: latestUserPrompt,
+    });
   }
 
   return Response.json(
