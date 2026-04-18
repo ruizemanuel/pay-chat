@@ -1,6 +1,6 @@
 import { Engine } from "thirdweb";
 import { settlePayment } from "thirdweb/x402";
-import { callLlm, type ChatMessage } from "@/lib/llm";
+import { callLlm, preflightLlm, type ChatMessage } from "@/lib/llm";
 import { logPromptReceipt } from "@/lib/prompt-receipt";
 import {
   paymentNetwork,
@@ -31,6 +31,20 @@ export async function POST(request: Request) {
 
   const paymentData =
     request.headers.get("PAYMENT-SIGNATURE") ?? request.headers.get("X-PAYMENT");
+
+  // Pre-flight the LLM BEFORE settling the user's payment. If the provider
+  // is down or the key is restricted, we'd rather return a free 503 than
+  // charge $0.02 USDC for an answer we can't produce.
+  if (paymentData) {
+    const health = await preflightLlm(body.model);
+    if (!health.ok) {
+      console.error("[chat] llm preflight failed — refusing to settle", health);
+      return Response.json(
+        { error: "llm_unavailable", detail: health.error },
+        { status: 503 },
+      );
+    }
+  }
 
   const settlement = await settlePayment({
     resourceUrl: request.url,
