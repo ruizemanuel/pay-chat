@@ -10,7 +10,6 @@ import {
 } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { useAutoConnect } from "@/hooks/useAutoConnect";
-import { useIsMiniPay } from "@/hooks/useIsMiniPay";
 import { payAndFetch, WalletNotAvailableError } from "@/lib/payments";
 import { SITE } from "@/lib/site";
 import { WalletBadge } from "./WalletBadge";
@@ -143,7 +142,6 @@ function statusLabel(status: Status): string {
 }
 
 export function ChatApp() {
-  const isMiniPay = useIsMiniPay();
   useAutoConnect();
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -231,11 +229,7 @@ export function ChatApp() {
         aria-busy={isSending}
       >
         {messages.length === 0 ? (
-          <EmptyState
-            isMiniPay={isMiniPay}
-            disabled={isSending}
-            onPick={(prompt) => void send(prompt)}
-          />
+          <EmptyState disabled={isSending} onPick={(prompt) => void send(prompt)} />
         ) : (
           <ul className="flex flex-col gap-3">
             {messages.map((message) => (
@@ -285,20 +279,15 @@ export function ChatApp() {
             <IconSend2 size={18} aria-hidden="true" />
           </button>
         </div>
-        <p className="mt-2 text-center text-[11px] text-zinc-400">
-          {SITE.pricePerQuery} per answer in {SITE.paymentToken} · no subscription · receipt onchain
-        </p>
       </form>
     </div>
   );
 }
 
 function EmptyState({
-  isMiniPay,
   disabled,
   onPick,
 }: {
-  isMiniPay: boolean;
   disabled: boolean;
   onPick: (prompt: string) => void;
 }) {
@@ -308,15 +297,10 @@ function EmptyState({
         <IconRobot size={28} aria-hidden="true" />
       </span>
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Ask AI, pay per answer</h2>
+        <h2 className="text-lg font-semibold">Ask anything onchain</h2>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Pick any question. We route it to the best model and charge {SITE.pricePerQuery} in{" "}
-          {SITE.paymentToken} — no subscription, no signup.
-        </p>
-        <p className="text-xs text-zinc-400">
-          {isMiniPay
-            ? "Connected via MiniPay. Tap a sample or type your own."
-            : "Connect a wallet on Celo to start. Each answer settles onchain."}
+          Each answer costs {SITE.pricePerQuery} {SITE.paymentToken} and settles on{" "}
+          {SITE.network}.
         </p>
       </div>
       <ul className="flex w-full flex-col gap-2">
