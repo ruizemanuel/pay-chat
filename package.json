@@ -38,7 +38,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitest/ui": "^4.1.4",
+    "@vitest/ui": "^2.1.9",
     "chai": "^4.5.0",
     "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
@@ -48,6 +48,6 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.4"
+    "vitest": "^2.1.9"
   }
 }

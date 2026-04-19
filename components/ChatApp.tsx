@@ -34,8 +34,8 @@ const CELO_MAINNET_NETWORKS = new Set(["celo", "eip155:42220", "42220"]);
 const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 const SAMPLE_PROMPTS = [
-  "What is MiniPay? Explain it like I'm a non-crypto user.",
-  "How can I send money to my family abroad using stablecoins?",
+  "Summarize my last transactions on Celo.",
+  `What can you tell me about contract ${SITE.contractAddress}?`,
   "Explain stablecoins to a small business owner in 2 sentences.",
 ];
 

@@ -1,3 +1,5 @@
+import type { ChainContextBlock } from "@/lib/chain-context";
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -46,6 +48,20 @@ const PROVIDERS: ProviderConfig[] = [
 const SYSTEM_PROMPT =
   "You are pay-chat, a concise general-purpose AI assistant. Answer whatever the user asks — any topic, not limited to wallets, crypto, or MiniPay. Match the user's language. Be direct and useful. Refuse briefly if asked something illegal or harmful.";
 
+const CHAIN_CONTEXT_PROMPT =
+  "The next message contains CONTEXT blocks with authoritative on-chain data " +
+  "fetched from Celo mainnet for references in the user's message. Use this " +
+  "data to answer factually. Never invent hashes, addresses, or amounts. " +
+  "If the user asks about on-chain data not present in these blocks, say you " +
+  "don't have it rather than guessing. Summarize in plain language.";
+
+function buildContextMessage(blocks: ChainContextBlock[]): ChatMessage {
+  return {
+    role: "system",
+    content: `CONTEXT:\n${JSON.stringify(blocks, null, 2)}`,
+  };
+}
+
 type ChatCompletionResponse = {
   choices: Array<{ message: { content: string } }>;
 };
@@ -53,11 +69,21 @@ type ChatCompletionResponse = {
 async function callProvider(
   provider: ProviderConfig,
   messages: ChatMessage[],
+  chainContext?: ChainContextBlock[],
 ): Promise<LlmResult> {
   const apiKey = process.env[provider.apiKeyEnv];
   if (!apiKey) {
     throw new Error(`${provider.apiKeyEnv} is not set`);
   }
+
+  const hasContext = (chainContext?.length ?? 0) > 0;
+  const systemMessages: ChatMessage[] = hasContext
+    ? [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: CHAIN_CONTEXT_PROMPT },
+        buildContextMessage(chainContext!),
+      ]
+    : [{ role: "system", content: SYSTEM_PROMPT }];
 
   const startedAt = Date.now();
   const response = await fetch(provider.endpoint, {
@@ -68,9 +94,9 @@ async function callProvider(
     },
     body: JSON.stringify({
       model: provider.model,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+      messages: [...systemMessages, ...messages],
       max_tokens: 1024,
-      temperature: 0.7,
+      temperature: hasContext ? 0.3 : 0.7,
     }),
     signal: AbortSignal.timeout(20_000),
   });
@@ -96,15 +122,19 @@ async function callProvider(
 /**
  * Call the LLM with automatic fallback across providers. Returns as soon as
  * any provider answers successfully. Throws only when every provider fails.
+ *
+ * Optional `chainContext` blocks are prepended as an extra system message so
+ * the model answers factually about on-chain data instead of hallucinating.
  */
 export async function callLlm(
   messages: ChatMessage[],
   _modelKey?: string | undefined,
+  chainContext?: ChainContextBlock[],
 ): Promise<LlmResult> {
   const failures: string[] = [];
   for (const provider of PROVIDERS) {
     try {
-      return await callProvider(provider, messages);
+      return await callProvider(provider, messages, chainContext);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "unknown";
       failures.push(`${provider.id}:${detail}`);

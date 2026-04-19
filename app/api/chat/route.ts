@@ -1,5 +1,10 @@
+import type { Address } from "viem";
 import { Engine } from "thirdweb";
 import { settlePayment } from "thirdweb/x402";
+import {
+  enrichContext,
+  type ChainContextBlock,
+} from "@/lib/chain-context";
 import { callLlm, preflightLlm, type ChatMessage } from "@/lib/llm";
 import { logPromptReceipt } from "@/lib/prompt-receipt";
 import {
@@ -78,11 +83,31 @@ export async function POST(request: Request) {
   // onchain hash. Resolve to the real hash in parallel with the LLM call so
   // the user sees a verifiable Celoscan receipt.
   const queueId = settlement.paymentReceipt.transaction;
+  const payer = settlement.paymentReceipt.payer as Address | undefined;
+  const latestUserPrompt =
+    body.messages[body.messages.length - 1]?.content ?? "";
+
+  // Pull on-chain context (tx explainer, address inspector, self history)
+  // so the LLM answers factually about Celo data mentioned in the prompt.
+  // Wrapped defensively: any failure here must NOT break the paid request.
+  let chainContext: ChainContextBlock[] = [];
+  if (process.env.ENABLE_CHAIN_CONTEXT !== "false") {
+    try {
+      chainContext = await enrichContext(latestUserPrompt, payer);
+    } catch (error) {
+      console.warn(
+        "[chain-context] enrich failed, continuing without context",
+        error,
+      );
+    }
+  }
 
   const [llmResult, transactionHash] = await Promise.all([
-    callLlm(body.messages, body.model).catch((error: unknown) => ({
-      error: error instanceof Error ? error.message : "llm_unknown_error",
-    })),
+    callLlm(body.messages, body.model, chainContext).catch(
+      (error: unknown) => ({
+        error: error instanceof Error ? error.message : "llm_unknown_error",
+      }),
+    ),
     resolveOnchainHash(queueId),
   ]);
 
@@ -93,9 +118,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const payer = settlement.paymentReceipt.payer;
-  const latestUserPrompt =
-    body.messages[body.messages.length - 1]?.content ?? "";
   if (payer && latestUserPrompt) {
     logPromptReceipt({
       user: payer,

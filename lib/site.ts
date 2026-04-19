@@ -1,4 +1,16 @@
 /**
+ * Stablecoins that MiniPay explicitly supports. Used when decoding ERC-20
+ * Transfer events so that on-chain context blocks can show "$1.50 USDT"
+ * instead of the raw token address + base units. Keys are lowercased for
+ * case-insensitive matching against Celo mainnet addresses.
+ */
+export const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> = {
+  "0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e": { symbol: "USDT", decimals: 6 },
+  "0xceba9300f2b948710d2653dd7b07f33a8b32118c": { symbol: "USDC", decimals: 6 },
+  "0x765de816845861e75a25fca122bb6898b8b1282a": { symbol: "USDm", decimals: 18 },
+};
+
+/**
  * Shared site-wide constants. Importable from both server and client code.
  */
 export const SITE = {
