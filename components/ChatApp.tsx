@@ -35,9 +35,9 @@ const CELO_MAINNET_NETWORKS = new Set(["celo", "eip155:42220", "42220"]);
 const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 const SAMPLE_PROMPTS = [
-  "What's a stablecoin? Explain in one sentence.",
-  "Translate \"good morning\" to Yoruba and Swahili.",
-  "Give me a 30-second elevator pitch for a small business idea.",
+  "What is Celo and why does it focus on stablecoins? One short paragraph.",
+  "Translate \"thank you\" to Swahili, Yoruba, and Spanish.",
+  "Suggest 3 catchy names for a small online clothing shop.",
 ];
 
 function extractReceipt(
@@ -68,15 +68,49 @@ function explorerUrl(hash: string, network: string): string {
   return `https://celoscan.io/tx/${hash}`;
 }
 
+function stringifyError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const obj = err as Record<string, unknown>;
+    if (typeof obj.message === "string") return obj.message;
+    if (typeof obj.reason === "string") return obj.reason;
+    if (typeof obj.shortMessage === "string") return obj.shortMessage;
+    const nested = obj.error;
+    if (nested && typeof nested === "object" && "message" in nested) {
+      const m = (nested as Record<string, unknown>).message;
+      if (typeof m === "string") return m;
+    }
+    try {
+      const json = JSON.stringify(err);
+      if (json && json !== "{}") return json;
+    } catch {
+      // fall through
+    }
+  }
+  return "Unknown error";
+}
+
 function mapError(err: unknown): string {
   if (err instanceof WalletNotAvailableError) return err.message;
-  const raw = err instanceof Error ? err.message : String(err);
+  const raw = stringifyError(err);
   const lower = raw.toLowerCase();
-  if (lower.includes("user rejected") || lower.includes("user denied")) {
+  if (
+    lower.includes("user rejected") ||
+    lower.includes("user denied") ||
+    lower.includes("rejected the request") ||
+    lower.includes("4001") // MetaMask user-rejected code
+  ) {
     return "Payment cancelled in the wallet.";
   }
   if (lower.includes("insufficient") || lower.includes("not enough")) {
     return `Not enough ${SITE.paymentToken} in this wallet to cover ${SITE.pricePerQuery}.`;
+  }
+  if (lower.includes("locked") || lower.includes("not unlocked")) {
+    return "Your wallet is locked. Unlock it and try again.";
+  }
+  if (lower.includes("disconnected") || lower.includes("not connected")) {
+    return "Wallet disconnected. Reconnect and try again.";
   }
   if (lower.includes("llm_unavailable")) {
     return "Both AI providers are unreachable. Try again in a minute.";
