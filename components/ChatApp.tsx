@@ -35,9 +35,9 @@ const CELO_MAINNET_NETWORKS = new Set(["celo", "eip155:42220", "42220"]);
 const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 const SAMPLE_PROMPTS = [
-  "What is Celo and why does it focus on stablecoins? One short paragraph.",
-  "Translate \"thank you\" to Swahili, Yoruba, and Spanish.",
-  "Suggest 3 catchy names for a small online clothing shop.",
+  "What is MiniPay? Explain it like I'm a non-crypto user.",
+  "How can I send money to my family abroad using stablecoins?",
+  "Explain stablecoins to a small business owner in 2 sentences.",
 ];
 
 function extractReceipt(
