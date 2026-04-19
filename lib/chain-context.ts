@@ -211,9 +211,20 @@ const MAX_EOA_TXS = 10;
 
 async function fetchEoaSummary(address: Address): Promise<EoaSummary | null> {
   const [natives, tokens] = await Promise.all([
-    etherscan.getTxList(address, MAX_EOA_TXS).catch(() => []),
-    etherscan.getTokenTxList(address, MAX_EOA_TXS).catch(() => []),
+    etherscan.getTxList(address, MAX_EOA_TXS).catch((err: unknown) => {
+      console.warn(`[chain-context] getTxList(${address}) failed:`, err);
+      return [];
+    }),
+    etherscan.getTokenTxList(address, MAX_EOA_TXS).catch((err: unknown) => {
+      console.warn(`[chain-context] getTokenTxList(${address}) failed:`, err);
+      return [];
+    }),
   ]);
+  if (process.env.NODE_ENV !== "production") {
+    console.log(
+      `[chain-context] fetchEoaSummary ${address}: ${natives.length} native, ${tokens.length} token`,
+    );
+  }
 
   const addressLower = address.toLowerCase();
 

@@ -338,7 +338,7 @@ function MessageBubble({ message }: { message: Message }) {
       </span>
       <div className="flex max-w-[80%] flex-col gap-1">
         <div
-          className={`whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+          className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
             isUser
               ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
               : "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
