@@ -1,67 +1,66 @@
 # pay-chat
 
-**AI pay-per-query MiniApp on Celo.** Ask OpenAI, Anthropic, or Groq from inside MiniPay — pay `$0.02` in stablecoin per answer, no subscription, no signup.
+**AI pay-per-query MiniApp on Celo.** Ask anything inside the MiniPay wallet — every answer costs $0.02 USDT and settles on Celo Mainnet with an on-chain receipt event.
 
-> **Status:** active development.
+🌐 **Live**: <https://pay-chat-nine.vercel.app>
+📜 **PromptReceipt contract** (verified): [`0x962BC4ad7671Db17d975AB42D4dA5110bC13b66a`](https://celoscan.io/address/0x962BC4ad7671Db17d975AB42D4dA5110bC13b66a)
 
-## What makes it different from ChatGPT / Claude / Grok
+## How it works
 
-1. **Phone tip** (`@celo/identity` ODIS) — send the AI's answer to a friend's phone number; they receive it in their MiniPay wallet. Not possible in any web chat.
-2. **On-chain receipts** — every paid query emits a `PromptPaid` event on Celo mainnet. Verifiable on Celoscan. Useful for businesses expensing AI, students proving honest use, auditable usage.
-3. **Zero-signup in-app UX** — MiniPay users are already wallet-verified; one tap and you're chatting. Works in regions where `chatgpt.com` + card payments are friction (Nigeria, Ghana, Argentina, Kenya).
-4. **Pay-per-use** — $0.02 per query beats $20/month subscriptions for casual users. Model shopping (auto-route by price/speed) in one UI.
+1. User asks a question.
+2. Backend returns `HTTP 402 Payment Required` per the [x402 protocol](https://x402.org).
+3. User signs an EIP-2612 permit for $0.02 USDT (no on-chain transaction for the user, no gas).
+4. Server-side thirdweb facilitator settles the payment on Celo, then calls Groq (Llama 3.3 70B) — or Cerebras (gpt-oss-120b) as automatic failover.
+5. The server wallet emits a `PromptPaid(user, model, queryHash, timestamp)` event from `PromptReceipt.sol` so every answer has a verifiable on-chain receipt.
 
 ## Stack
 
-- **Framework**: Next.js 16 (App Router, Turbopack) · TypeScript strict
+- **Framework**: Next.js 16 (App Router · Turbopack) · TypeScript strict
 - **Styling**: Tailwind v4 · `@tabler/icons-react`
 - **Wallet**: wagmi 3 + viem 2 + `injected()` connector
 - **Payments**: thirdweb x402 (`useFetchWithPayment` + `settlePayment`)
-- **Identity**: `@celo/identity` for phone → address lookup (ODIS)
-- **Contracts**: Hardhat 3 + Solidity 0.8.28 on Celo mainnet (42220) and Celo Sepolia (11142220)
-- **Deploy**: Vercel (edge route handlers)
+- **LLM**: Groq Llama 3.3 70B with Cerebras `gpt-oss-120b` as automatic failover, plus a preflight health check so the user is never charged when the model is unreachable
+- **Contracts**: Hardhat 2 + Solidity 0.8.28 + OpenZeppelin `Ownable`
+- **Deploy**: Vercel with GitHub auto-deploy on `main`
 - **Package manager**: pnpm
 
-## Quick start
+## Local development
 
 ```bash
 pnpm install
-pnpm dev             # http://localhost:3000
+cp .env.example .env.local   # fill in the secrets
+pnpm dev                     # http://localhost:3000
 ```
 
-Test inside MiniPay:
-
-```bash
-ngrok http 3000
-# Copy the ngrok HTTPS URL into MiniPay: Settings → Developer → Load Test Page
-```
+To test inside MiniPay's Developer Mode, load the production URL directly (no ngrok required) or expose `localhost:3000` over HTTPS with `ngrok http 3000` and paste the tunnel URL.
 
 ## Scripts
 
 | Script | What it does |
 |---|---|
-| `pnpm dev` | Next.js dev server with Turbopack |
+| `pnpm dev` | Next.js dev server (Turbopack) |
 | `pnpm build` | Production build |
-| `pnpm start` | Serve production build |
-| `pnpm lint` | ESLint |
-| `pnpm typecheck` | `tsc --noEmit` in strict mode |
-| `pnpm test` | Vitest run |
-| `pnpm test:watch` | Vitest watch mode |
-| `pnpm test:ui` | Vitest UI |
+| `pnpm lint` · `pnpm typecheck` | ESLint · `tsc --noEmit` |
+| `pnpm test` | Vitest unit tests |
+| `pnpm hh:test` | Hardhat contract tests |
+| `pnpm hh:deploy:celo` | Deploy `PromptReceipt.sol` to Celo mainnet |
+| `pnpm build:icons` | Rasterize `public/icon.svg` into PNG icons |
 
-## Environment
-
-Copy `.env.example` to `.env.local` and fill in:
+## Project layout
 
 ```
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GROQ_API_KEY=
-THIRDWEB_SECRET_KEY=
-SERVER_WALLET_PK=
-CELO_RPC=https://forno.celo.org
+app/                    Next.js App Router (chat, /api/chat, /tos, /privacy)
+components/             ChatApp, Footer, WalletBadge
+hooks/                  useAutoConnect, useIsMiniPay, useIsMounted
+lib/                    wagmi config, x402 server, thirdweb client, llm router, prompt-receipt
+contracts/              PromptReceipt.sol
+scripts/                deploy-prompt-receipt.ts, build-icon.mjs
 ```
 
 ## License
 
-MIT
+[MIT](./LICENSE)
+
+---
+
+Built for [Celo Proof of Ship](https://talent.app/~/earn/celo-proof-of-ship). Support: <https://t.me/paychat_support>.
