@@ -33,10 +33,24 @@ type ChatResponse = {
 const CELO_MAINNET_NETWORKS = new Set(["celo", "eip155:42220", "42220"]);
 const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-const SAMPLE_PROMPTS = [
-  "Summarize my last transactions on Celo.",
-  `What can you tell me about contract ${SITE.contractAddress}?`,
-  "Explain stablecoins to a small business owner in 2 sentences.",
+const TRUNCATED_CONTRACT = `${SITE.contractAddress.slice(0, 6)}…${SITE.contractAddress.slice(-4)}`;
+
+const SAMPLE_PROMPTS: Array<{ label: string; value: string }> = [
+  {
+    label: "Summarize my last transactions on Celo.",
+    value: "Summarize my last transactions on Celo.",
+  },
+  {
+    // Label shows a truncated address so the button fits on narrow screens,
+    // but the click sends the full address so the chain-context regex can
+    // actually match it and fetch the contract metadata.
+    label: `What can you tell me about contract ${TRUNCATED_CONTRACT}?`,
+    value: `What can you tell me about contract ${SITE.contractAddress}?`,
+  },
+  {
+    label: "Explain stablecoins to a small business owner in 2 sentences.",
+    value: "Explain stablecoins to a small business owner in 2 sentences.",
+  },
 ];
 
 function extractReceipt(
@@ -305,15 +319,15 @@ function EmptyState({
       </div>
       <ul className="flex w-full flex-col gap-2">
         {SAMPLE_PROMPTS.map((prompt) => (
-          <li key={prompt}>
+          <li key={prompt.value}>
             <button
               type="button"
-              onClick={() => onPick(prompt)}
+              onClick={() => onPick(prompt.value)}
               disabled={disabled}
               className="flex w-full items-start gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               <IconSparkles size={14} className="mt-1 shrink-0 text-zinc-400" aria-hidden="true" />
-              <span>{prompt}</span>
+              <span className="break-words">{prompt.label}</span>
             </button>
           </li>
         ))}
