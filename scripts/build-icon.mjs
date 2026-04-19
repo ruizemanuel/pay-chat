@@ -23,3 +23,11 @@ async function rasterize(size, outName) {
 await rasterize(512, "icon-512.png");
 await rasterize(192, "icon-192.png");
 await rasterize(180, "apple-icon.png");
+
+// Next.js App Router auto-discovers app/icon.png as the favicon — render
+// a 32x32 there too so the browser tab matches the brand mark.
+const svg = await readFile(svgPath);
+const favicon = await sharp(svg).resize(32, 32).png().toBuffer();
+const appIconPath = path.join(root, "app", "icon.png");
+await writeFile(appIconPath, favicon);
+console.log(`wrote app/icon.png (32x32, ${favicon.byteLength} bytes)`);

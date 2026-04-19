@@ -13,7 +13,5 @@
     <circle cx="-52" cy="-12" r="18" fill="#ffffff" stroke="none"/>
     <circle cx="52" cy="-12" r="18" fill="#ffffff" stroke="none"/>
     <line x1="-40" y1="40" x2="40" y2="40"/>
-    <line x1="-128" y1="-40" x2="-160" y2="-40"/>
-    <line x1="128" y1="-40" x2="160" y2="-40"/>
   </g>
 </svg>
