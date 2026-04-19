@@ -38,6 +38,10 @@ export const metadata: Metadata = {
     siteName: SITE.name,
     images: [{ url: "/icon-512.png", width: 512, height: 512, alt: SITE.name }],
   },
+  other: {
+    "talentapp:project_verification":
+      "9408dcf6437baab418f2e45456e757c1c8cfa86e3aa7b21597fc4b261a0a71845d53d397e38c5ca11c6b350080a931100179fde35c720b8548a91669086dc972",
+  },
 };
 
 export const viewport: Viewport = {
