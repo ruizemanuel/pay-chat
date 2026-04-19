@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SITE } from "@/lib/site";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -14,9 +15,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "pay-chat",
-  description:
-    "AI pay-per-query MiniApp on Celo. Ask OpenAI, Anthropic or Groq from inside MiniPay — pay per answer in stablecoin, no subscription.",
+  metadataBase: new URL(SITE.productionUrl),
+  title: {
+    default: SITE.name,
+    template: `%s · ${SITE.name}`,
+  },
+  description: SITE.description,
+  applicationName: SITE.name,
+  icons: {
+    icon: [
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: { url: "/apple-icon.png", sizes: "180x180" },
+  },
+  openGraph: {
+    type: "website",
+    title: SITE.name,
+    description: SITE.description,
+    url: SITE.productionUrl,
+    siteName: SITE.name,
+    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: SITE.name }],
+  },
 };
 
 export const viewport: Viewport = {
