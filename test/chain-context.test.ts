@@ -6,18 +6,24 @@ vi.mock("server-only", () => ({}));
 const getTransactionReceipt = vi.fn();
 const getTransaction = vi.fn();
 const getBytecode = vi.fn();
+const getBlock = vi.fn();
+const readContract = vi.fn();
 
 vi.mock("@/lib/celo-public", () => ({
   publicClient: {
     getTransactionReceipt: (args: { hash: Hash }) => getTransactionReceipt(args),
     getTransaction: (args: { hash: Hash }) => getTransaction(args),
     getBytecode: (args: { address: Address }) => getBytecode(args),
+    getBlock: (args: { blockNumber: bigint }) => getBlock(args),
+    readContract: (args: { address: Address; functionName: string }) =>
+      readContract(args),
   },
 }));
 
 const getSourceCode = vi.fn();
 const getTxList = vi.fn();
 const getTokenTxList = vi.fn();
+const getContractCreation = vi.fn();
 
 vi.mock("@/lib/etherscan", () => ({
   etherscan: {
@@ -25,6 +31,7 @@ vi.mock("@/lib/etherscan", () => ({
     getTxList: (address: Address, limit?: number) => getTxList(address, limit),
     getTokenTxList: (address: Address, limit?: number) =>
       getTokenTxList(address, limit),
+    getContractCreation: (address: Address) => getContractCreation(address),
   },
   EtherscanError: class EtherscanError extends Error {},
 }));
@@ -335,17 +342,25 @@ describe("enrichContext — address path", () => {
     getTransactionReceipt.mockReset();
     getTransaction.mockReset();
     getBytecode.mockReset();
+    getBlock.mockReset();
+    readContract.mockReset();
     getSourceCode.mockReset();
     getTxList.mockReset();
     getTokenTxList.mockReset();
+    getContractCreation.mockReset();
   });
 
-  it("returns a contract block when address has bytecode and source is verified", async () => {
-    getBytecode.mockResolvedValue("0x608060405234801561..."); // non-empty
+  it("returns enriched contract block: verified, name, owner, age, power functions", async () => {
+    getBytecode.mockResolvedValue("0x608060405234801561...");
     getSourceCode.mockResolvedValue([
       {
         SourceCode: "pragma solidity ^0.8.0; contract PromptReceipt {}",
-        ABI: "[]",
+        ABI: JSON.stringify([
+          { type: "function", name: "logPrompt", stateMutability: "nonpayable" },
+          { type: "function", name: "owner", stateMutability: "view", outputs: [{ type: "address" }] },
+          { type: "function", name: "transferOwnership", stateMutability: "nonpayable" },
+          { type: "function", name: "renounceOwnership", stateMutability: "nonpayable" },
+        ]),
         ContractName: "PromptReceipt",
         CompilerVersion: "v0.8.28",
         OptimizationUsed: "1",
@@ -353,18 +368,39 @@ describe("enrichContext — address path", () => {
         Implementation: "",
       },
     ]);
+    getContractCreation.mockResolvedValue([
+      {
+        contractAddress: CONTRACT.toLowerCase(),
+        contractCreator: "0x4dba906e137c62E11c1428ea067b0DE0d65B9fb2",
+        txHash: "0xcreationtx",
+      },
+    ]);
+    getTransaction.mockResolvedValue({ blockNumber: BigInt(31000000) });
+    getBlock.mockResolvedValue({ timestamp: BigInt(1713398400) }); // 2024-04-18
+    readContract.mockResolvedValue("0x4dba906e137c62E11c1428ea067b0DE0d65B9fb2");
 
     const blocks = await enrichContext(`what is ${CONTRACT}?`);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].kind).toBe("contract");
     if (blocks[0].kind === "contract") {
-      expect(blocks[0].data.verified).toBe(true);
-      expect(blocks[0].data.name).toBe("PromptReceipt");
-      expect(blocks[0].data.compiler).toBe("v0.8.28");
+      const d = blocks[0].data;
+      expect(d.verified).toBe(true);
+      expect(d.name).toBe("PromptReceipt");
+      expect(d.compiler).toBe("v0.8.28");
+      expect(d.creator).toBe("0x4dba906e137c62E11c1428ea067b0DE0d65B9fb2");
+      expect(d.createdAt).toBe("2024-04-18T00:00:00.000Z");
+      expect(typeof d.ageDays).toBe("number");
+      expect(d.ageDays).toBeGreaterThan(0);
+      expect(d.owner).toBe("0x4dba906e137c62E11c1428ea067b0DE0d65B9fb2");
+      expect(d.powerFunctions).toEqual([
+        "transferOwnership",
+        "renounceOwnership",
+      ]);
+      expect(d.proxy).toBeUndefined();
     }
   });
 
-  it("marks an unverified contract as verified: false", async () => {
+  it("marks an unverified contract as verified: false and skips ABI parsing", async () => {
     getBytecode.mockResolvedValue("0x608060");
     getSourceCode.mockResolvedValue([
       {
@@ -377,12 +413,41 @@ describe("enrichContext — address path", () => {
         Implementation: "",
       },
     ]);
+    getContractCreation.mockResolvedValue([]);
+    readContract.mockRejectedValue(new Error("function not found"));
 
     const blocks = await enrichContext(`what is ${CONTRACT}?`);
     expect(blocks).toHaveLength(1);
     if (blocks[0].kind === "contract") {
       expect(blocks[0].data.verified).toBe(false);
       expect(blocks[0].data.name).toBeUndefined();
+      expect(blocks[0].data.powerFunctions).toBeUndefined();
+      expect(blocks[0].data.owner).toBeUndefined();
+    }
+  });
+
+  it("flags upgradeable proxy and includes the implementation address", async () => {
+    getBytecode.mockResolvedValue("0x608060");
+    getSourceCode.mockResolvedValue([
+      {
+        SourceCode: "pragma solidity;",
+        ABI: "[]",
+        ContractName: "MyProxy",
+        CompilerVersion: "v0.8.0",
+        OptimizationUsed: "1",
+        Proxy: "1",
+        Implementation: "0x1234567890123456789012345678901234567890",
+      },
+    ]);
+    getContractCreation.mockResolvedValue([]);
+    readContract.mockRejectedValue(new Error());
+
+    const blocks = await enrichContext(`what is ${CONTRACT}?`);
+    if (blocks[0].kind === "contract") {
+      expect(blocks[0].data.proxy).toEqual({
+        isProxy: true,
+        implementation: "0x1234567890123456789012345678901234567890",
+      });
     }
   });
 

@@ -38,6 +38,18 @@ export type ContractSummary = {
   verified: boolean;
   name?: string;
   compiler?: string;
+  creator?: Address;
+  createdAt?: string;
+  ageDays?: number;
+  owner?: Address;
+  /**
+   * Subset of state-changing functions on the ABI that grant outsized
+   * control to whoever can call them (mint, burn, pause, upgrade,
+   * transfer ownership, etc.). Empty array means none detected; undefined
+   * means we couldn't parse the ABI (unverified).
+   */
+  powerFunctions?: string[];
+  proxy?: { isProxy: true; implementation?: Address };
 };
 
 export type EoaRecentTx = {
@@ -188,23 +200,157 @@ async function isContract(address: Address): Promise<boolean> {
   }
 }
 
-async function fetchContractSummary(
-  address: Address,
-): Promise<ContractSummary | null> {
+/**
+ * Function-name patterns considered "power" — i.e. they let whoever can call
+ * them change critical state (admin role, supply, upgradability, treasury).
+ * Matched against state-changing functions only (skipping view/pure).
+ */
+const POWER_FUNCTION_PATTERNS = [
+  /^transferOwnership$/i,
+  /^renounceOwnership$/i,
+  /^acceptOwnership$/i,
+  /^setOwner$/i,
+  /^changeOwner$/i,
+  /^mint/i,
+  /^burn/i,
+  /^pause$|^unpause$|setPaused/i,
+  /^upgradeTo/i,
+  /^_?selfdestruct$|^kill$/i,
+  /blacklist|blocklist/i,
+  /^withdraw/i,
+  /setFee|setTax|setSupply/i,
+];
+
+type AbiItem = {
+  type?: string;
+  name?: string;
+  stateMutability?: string;
+};
+
+function detectPowerFunctions(abiJson: string | undefined): string[] | undefined {
+  if (!abiJson || abiJson === "Contract source code not verified") {
+    return undefined;
+  }
   try {
-    const result = await etherscan.getSourceCode(address);
-    const entry = result[0];
-    const verified =
-      typeof entry?.SourceCode === "string" && entry.SourceCode.length > 0;
-    return {
+    const abi = JSON.parse(abiJson) as AbiItem[];
+    if (!Array.isArray(abi)) return undefined;
+    const matches = abi
+      .filter(
+        (item) =>
+          item.type === "function" &&
+          item.stateMutability !== "view" &&
+          item.stateMutability !== "pure" &&
+          typeof item.name === "string" &&
+          POWER_FUNCTION_PATTERNS.some((pattern) => pattern.test(item.name!)),
+      )
+      .map((item) => item.name!)
+      .filter((name, idx, arr) => arr.indexOf(name) === idx);
+    return matches;
+  } catch {
+    return undefined;
+  }
+}
+
+const OWNER_ABI = [
+  {
+    type: "function",
+    name: "owner",
+    inputs: [],
+    outputs: [{ type: "address" }],
+    stateMutability: "view",
+  },
+] as const;
+
+async function readOwner(address: Address): Promise<Address | undefined> {
+  try {
+    const result = await publicClient.readContract({
       address,
-      verified,
-      name: entry?.ContractName ? entry.ContractName : undefined,
-      compiler: entry?.CompilerVersion ? entry.CompilerVersion : undefined,
-    };
+      abi: OWNER_ABI,
+      functionName: "owner",
+    });
+    return result as Address;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchCreationInfo(
+  address: Address,
+): Promise<{ creator?: Address; createdAt?: string } | null> {
+  try {
+    const result = await etherscan.getContractCreation(address);
+    const entry = result[0];
+    if (!entry) return null;
+    const creator = entry.contractCreator as Address;
+    const txHash = entry.txHash as Hash;
+    let createdAt: string | undefined;
+    try {
+      const tx = await publicClient.getTransaction({ hash: txHash });
+      if (tx.blockNumber !== null && tx.blockNumber !== undefined) {
+        const block = await publicClient.getBlock({
+          blockNumber: tx.blockNumber,
+        });
+        createdAt = new Date(Number(block.timestamp) * 1000).toISOString();
+      }
+    } catch {
+      /* keep createdAt undefined */
+    }
+    return { creator, createdAt };
   } catch {
     return null;
   }
+}
+
+async function fetchContractSummary(
+  address: Address,
+): Promise<ContractSummary | null> {
+  const [sourceResult, creationResult, ownerResult] = await Promise.all([
+    etherscan.getSourceCode(address).catch((err: unknown) => {
+      console.warn(`[chain-context] getSourceCode(${address}) failed:`, err);
+      return null;
+    }),
+    fetchCreationInfo(address),
+    readOwner(address),
+  ]);
+
+  if (!sourceResult) return null;
+  const entry = sourceResult[0];
+  const verified =
+    typeof entry?.SourceCode === "string" && entry.SourceCode.length > 0;
+
+  const powerFunctions = verified
+    ? detectPowerFunctions(entry?.ABI)
+    : undefined;
+
+  const proxy =
+    entry?.Proxy === "1"
+      ? {
+          isProxy: true as const,
+          implementation: entry.Implementation
+            ? (entry.Implementation as Address)
+            : undefined,
+        }
+      : undefined;
+
+  let ageDays: number | undefined;
+  if (creationResult?.createdAt) {
+    ageDays = Math.floor(
+      (Date.now() - Date.parse(creationResult.createdAt)) / 86_400_000,
+    );
+  }
+
+  return {
+    address,
+    verified,
+    name: entry?.ContractName ? entry.ContractName : undefined,
+    compiler: entry?.CompilerVersion ? entry.CompilerVersion : undefined,
+    creator: creationResult?.creator,
+    createdAt: creationResult?.createdAt,
+    ageDays,
+    owner: ownerResult,
+    powerFunctions,
+    proxy,
+  };
 }
 
 const MAX_EOA_TXS = 10;

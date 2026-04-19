@@ -179,4 +179,34 @@ describe("etherscan wrapper", () => {
     ).rejects.toMatchObject({ code: "no_key" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("returns getContractCreation result for a known contract", async () => {
+    fetchMock.mockResolvedValue(
+      mockFetchResponse({
+        status: "1",
+        message: "OK",
+        result: [
+          {
+            contractAddress: "0x962bc4ad7671db17d975ab42d4da5110bc13b66a",
+            contractCreator: "0x4dba906e137c62E11c1428ea067b0DE0d65B9fb2",
+            txHash: "0xdeploytxhash",
+          },
+        ],
+      }),
+    );
+
+    const result = await etherscan.getContractCreation(
+      "0x962BC4ad7671Db17d975AB42D4dA5110bC13b66a",
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].contractCreator).toBe(
+      "0x4dba906e137c62E11c1428ea067b0DE0d65B9fb2",
+    );
+    expect(result[0].txHash).toBe("0xdeploytxhash");
+    const url = fetchMock.mock.calls[0][0] as URL;
+    expect(url.searchParams.get("action")).toBe("getcontractcreation");
+    expect(url.searchParams.get("contractaddresses")).toBe(
+      "0x962BC4ad7671Db17d975AB42D4dA5110bC13b66a",
+    );
+  });
 });

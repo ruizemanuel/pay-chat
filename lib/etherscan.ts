@@ -49,6 +49,12 @@ export type EtherscanTokenTx = {
   tokenDecimal: string;
 };
 
+export type EtherscanContractCreation = {
+  contractAddress: string;
+  contractCreator: string;
+  txHash: string;
+};
+
 class EtherscanError extends Error {
   constructor(
     message: string,
@@ -146,6 +152,14 @@ export const etherscan = {
       page: "1",
       offset: String(limit),
       sort: "desc",
+    }),
+
+  /** Returns the deployer + creation tx hash for a contract address. */
+  getContractCreation: (address: Address) =>
+    call<EtherscanContractCreation[]>({
+      module: "contract",
+      action: "getcontractcreation",
+      contractaddresses: address,
     }),
 };
 
