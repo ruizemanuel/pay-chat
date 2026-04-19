@@ -54,10 +54,10 @@ const CHAIN_CONTEXT_PROMPT =
   "data to answer factually. Never invent hashes, addresses, or amounts. " +
   "If the user asks about on-chain data not present in these blocks, say you " +
   "don't have it rather than guessing. Summarize in plain language. " +
-  "When mentioning any address or tx hash in your answer, ALWAYS truncate it " +
-  "as `0x1234…abcd` (first 6 and last 4 characters) so it fits on a mobile " +
-  "screen — never paste the full hex string into prose. Also call out both " +
-  "native CELO transfers and ERC-20 token transfers when an EoaSummary has them.";
+  "Mention addresses and tx hashes verbatim (full 0x… form) — the UI renders " +
+  "them as compact copy-able chips automatically, so do NOT truncate them " +
+  "yourself. Also call out both native CELO transfers and ERC-20 token " +
+  "transfers when an EoaSummary has them.";
 
 function buildContextMessage(blocks: ChainContextBlock[]): ChatMessage {
   return {

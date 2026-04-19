@@ -12,6 +12,7 @@ import { useState, type FormEvent } from "react";
 import { useAutoConnect } from "@/hooks/useAutoConnect";
 import { payAndFetch, WalletNotAvailableError } from "@/lib/payments";
 import { SITE } from "@/lib/site";
+import { MessageContent } from "./MessageContent";
 import { WalletBadge } from "./WalletBadge";
 
 type Message = {
@@ -358,7 +359,7 @@ function MessageBubble({ message }: { message: Message }) {
               : "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
           }`}
         >
-          {message.content}
+          {isUser ? message.content : <MessageContent text={message.content} />}
         </div>
         {message.receiptUrl ? (
           <a
