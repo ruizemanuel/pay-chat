@@ -87,13 +87,26 @@ export async function POST(request: Request) {
   const latestUserPrompt =
     body.messages[body.messages.length - 1]?.content ?? "";
 
+  // Build the enrichment input from the user's latest message AND the most
+  // recent assistant reply. Reason: short follow-ups like "dime más sobre el
+  // owner" or "yes" don't repeat the address, so scanning only the user
+  // message would miss it and the LLM would fall back to inventing data.
+  const previousAssistantPrompt =
+    [...body.messages]
+      .slice(0, -1)
+      .reverse()
+      .find((m) => m.role === "assistant")?.content ?? "";
+  const enrichInput = previousAssistantPrompt
+    ? `${previousAssistantPrompt}\n${latestUserPrompt}`
+    : latestUserPrompt;
+
   // Pull on-chain context (tx explainer, address inspector, self history)
   // so the LLM answers factually about Celo data mentioned in the prompt.
   // Wrapped defensively: any failure here must NOT break the paid request.
   let chainContext: ChainContextBlock[] = [];
   if (process.env.ENABLE_CHAIN_CONTEXT !== "false") {
     try {
-      chainContext = await enrichContext(latestUserPrompt, payer);
+      chainContext = await enrichContext(enrichInput, payer);
     } catch (error) {
       console.warn(
         "[chain-context] enrich failed, continuing without context",

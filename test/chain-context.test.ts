@@ -550,6 +550,25 @@ describe("enrichContext — address path", () => {
     expect(blocks).toEqual([]);
   });
 
+  it("caps the number of references it resolves per request to 3 per kind", async () => {
+    // Five distinct addresses in the same message — only first 3 should
+    // be looked up, protecting Etherscan rate limits and LLM context budget.
+    const addrs = [
+      "0x1111111111111111111111111111111111111111",
+      "0x2222222222222222222222222222222222222222",
+      "0x3333333333333333333333333333333333333333",
+      "0x4444444444444444444444444444444444444444",
+      "0x5555555555555555555555555555555555555555",
+    ];
+    getBytecode.mockResolvedValue("0x");
+    getTxList.mockResolvedValue([]);
+    getTokenTxList.mockResolvedValue([]);
+
+    const blocks = await enrichContext(addrs.join(" "));
+    expect(blocks).toHaveLength(3);
+    expect(getBytecode).toHaveBeenCalledTimes(3);
+  });
+
   it("returns multiple blocks when tx hash and address are in same message", async () => {
     // tx path
     getTransactionReceipt.mockResolvedValue({

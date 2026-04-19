@@ -107,6 +107,14 @@ const ERC20_TRANSFER_ABI = [
 
 const MAX_DECODED_TRANSFERS = 10;
 
+/**
+ * Cap how many references we resolve per request. Protects against blowing
+ * the LLM context budget (and the Etherscan rate limit) when the enrichment
+ * input contains many identifiers — e.g. a long assistant reply that listed
+ * a self-history of 10 txs we'd otherwise re-fetch.
+ */
+const MAX_REFS_PER_KIND = 3;
+
 export function detectReferences(text: string): {
   txHashes: Hash[];
   addresses: Address[];
@@ -434,7 +442,9 @@ export async function enrichContext(
   userMessage: string,
   connectedAddress?: Address,
 ): Promise<ChainContextBlock[]> {
-  const { txHashes, addresses } = detectReferences(userMessage);
+  const detected = detectReferences(userMessage);
+  const txHashes = detected.txHashes.slice(0, MAX_REFS_PER_KIND);
+  const addresses = detected.addresses.slice(0, MAX_REFS_PER_KIND);
   const wantsSelfHistory =
     connectedAddress !== undefined && hasSelfHistoryIntent(userMessage);
 
