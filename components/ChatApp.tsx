@@ -5,12 +5,14 @@ import {
   IconExternalLink,
   IconRobot,
   IconSend2,
+  IconSparkles,
   IconUser,
 } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { useAutoConnect } from "@/hooks/useAutoConnect";
 import { useIsMiniPay } from "@/hooks/useIsMiniPay";
 import { payAndFetch, WalletNotAvailableError } from "@/lib/payments";
+import { SITE } from "@/lib/site";
 import { WalletBadge } from "./WalletBadge";
 
 type Message = {
@@ -31,6 +33,12 @@ type ChatResponse = {
 
 const CELO_MAINNET_NETWORKS = new Set(["celo", "eip155:42220", "42220"]);
 const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+
+const SAMPLE_PROMPTS = [
+  "What's a stablecoin? Explain in one sentence.",
+  "Translate \"good morning\" to Yoruba and Swahili.",
+  "Give me a 30-second elevator pitch for a small business idea.",
+];
 
 function extractReceipt(
   receipt: ChatResponse["paymentReceipt"],
@@ -60,19 +68,61 @@ function explorerUrl(hash: string, network: string): string {
   return `https://celoscan.io/tx/${hash}`;
 }
 
+function mapError(err: unknown): string {
+  if (err instanceof WalletNotAvailableError) return err.message;
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+  if (lower.includes("user rejected") || lower.includes("user denied")) {
+    return "Payment cancelled in the wallet.";
+  }
+  if (lower.includes("insufficient") || lower.includes("not enough")) {
+    return `Not enough ${SITE.paymentToken} in this wallet to cover ${SITE.pricePerQuery}.`;
+  }
+  if (lower.includes("llm_unavailable")) {
+    return "Both AI providers are unreachable. Try again in a minute.";
+  }
+  if (lower.includes("llm_failed")) {
+    return "The AI provider returned an error. You were not charged.";
+  }
+  if (lower.includes("timeout") || lower.includes("aborted")) {
+    return "The request timed out. Check your connection and try again.";
+  }
+  if (lower.includes("network") || lower.includes("fetch")) {
+    return "Network error. Check your connection and try again.";
+  }
+  return raw.slice(0, 200);
+}
+
+type Status = "idle" | "preparing" | "settling" | "thinking";
+
+function statusLabel(status: Status): string {
+  switch (status) {
+    case "preparing":
+      return "Sign the payment in your wallet…";
+    case "settling":
+      return `Settling ${SITE.pricePerQuery} on Celo…`;
+    case "thinking":
+      return "Asking the model…";
+    default:
+      return "";
+  }
+}
+
 export function ChatApp() {
   const isMiniPay = useIsMiniPay();
   useAutoConnect();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed || isSending) return;
+  const isSending = status !== "idle";
+
+  async function send(prompt: string) {
+    if (isSending) return;
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -83,9 +133,14 @@ export function ChatApp() {
     setMessages(nextMessages);
     setInput("");
     setError(null);
-    setIsSending(true);
+    setStatus("preparing");
 
     try {
+      // payAndFetch internally: 1) connect/sign in wallet, 2) POST → 402 →
+      // sign payment → POST again. We can't peek inside its phases, so we
+      // optimistically progress the status to "settling" once it returns
+      // and to "thinking" inferred via the response body — for the demo
+      // labels are good enough.
       const response = await payAndFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -93,10 +148,15 @@ export function ChatApp() {
           messages: nextMessages.map(({ role, content }) => ({ role, content })),
         }),
       });
+      setStatus("thinking");
 
       if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({}));
-        throw new Error(errorPayload.error ?? `Request failed (${response.status})`);
+        const errorPayload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          detail?: string;
+        };
+        const tag = errorPayload.error ?? `Request failed (${response.status})`;
+        throw new Error(`${tag}: ${errorPayload.detail ?? ""}`);
       }
 
       const data = (await response.json()) as ChatResponse;
@@ -111,16 +171,15 @@ export function ChatApp() {
         },
       ]);
     } catch (err) {
-      const message =
-        err instanceof WalletNotAvailableError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Something went wrong";
-      setError(message);
+      setError(mapError(err));
     } finally {
-      setIsSending(false);
+      setStatus("idle");
     }
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void send(input);
   }
 
   return (
@@ -128,25 +187,35 @@ export function ChatApp() {
       <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <div className="flex items-center gap-2">
           <IconRobot size={22} aria-hidden="true" />
-          <h1 className="text-base font-semibold">pay-chat</h1>
+          <h1 className="text-base font-semibold">{SITE.name}</h1>
         </div>
         <WalletBadge />
       </header>
 
-      <main className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
+      <main
+        className="flex flex-1 flex-col overflow-y-auto px-4 py-4"
+        aria-busy={isSending}
+      >
         {messages.length === 0 ? (
-          <EmptyState isMiniPay={isMiniPay} />
+          <EmptyState
+            isMiniPay={isMiniPay}
+            disabled={isSending}
+            onPick={(prompt) => void send(prompt)}
+          />
         ) : (
           <ul className="flex flex-col gap-3">
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
-            {isSending ? <TypingIndicator /> : null}
+            {isSending ? <TypingIndicator label={statusLabel(status)} /> : null}
           </ul>
         )}
         {error ? (
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-            <IconAlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <div
+            role="alert"
+            className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <IconAlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
             <span>{error}</span>
           </div>
         ) : null}
@@ -164,6 +233,8 @@ export function ChatApp() {
             id="prompt"
             name="prompt"
             type="text"
+            inputMode="text"
+            enterKeyHint="send"
             autoComplete="off"
             placeholder="Ask anything…"
             value={input}
@@ -174,36 +245,61 @@ export function ChatApp() {
           <button
             type="submit"
             disabled={!input.trim() || isSending}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 dark:disabled:bg-zinc-700"
-            aria-label="Send"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 dark:focus-visible:outline-white dark:disabled:bg-zinc-700"
+            aria-label="Send message"
           >
-            <IconSend2 size={18} />
+            <IconSend2 size={18} aria-hidden="true" />
           </button>
         </div>
         <p className="mt-2 text-center text-[11px] text-zinc-400">
-          You pay per answer in stablecoin · no subscription
+          {SITE.pricePerQuery} per answer in {SITE.paymentToken} · no subscription · receipt onchain
         </p>
       </form>
     </div>
   );
 }
 
-function EmptyState({ isMiniPay }: { isMiniPay: boolean }) {
+function EmptyState({
+  isMiniPay,
+  disabled,
+  onPick,
+}: {
+  isMiniPay: boolean;
+  disabled: boolean;
+  onPick: (prompt: string) => void;
+}) {
   return (
-    <div className="m-auto flex max-w-sm flex-col items-center gap-3 text-center">
+    <div className="m-auto flex w-full max-w-sm flex-col items-center gap-4 text-center">
       <span className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-900">
         <IconRobot size={28} aria-hidden="true" />
       </span>
-      <h2 className="text-lg font-semibold">Ask AI, pay per answer</h2>
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-        Pick any question. We route it to the best model and charge a couple of cents in
-        stablecoin — no subscription, no signup.
-      </p>
-      <p className="text-xs text-zinc-400">
-        {isMiniPay
-          ? "Connected via MiniPay. Type a question to get started."
-          : "Connect a wallet on Celo to start. Each answer settles onchain."}
-      </p>
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold">Ask AI, pay per answer</h2>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          Pick any question. We route it to the best model and charge {SITE.pricePerQuery} in{" "}
+          {SITE.paymentToken} — no subscription, no signup.
+        </p>
+        <p className="text-xs text-zinc-400">
+          {isMiniPay
+            ? "Connected via MiniPay. Tap a sample or type your own."
+            : "Connect a wallet on Celo to start. Each answer settles onchain."}
+        </p>
+      </div>
+      <ul className="flex w-full flex-col gap-2">
+        {SAMPLE_PROMPTS.map((prompt) => (
+          <li key={prompt}>
+            <button
+              type="button"
+              onClick={() => onPick(prompt)}
+              disabled={disabled}
+              className="flex w-full items-start gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-left text-sm text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              <IconSparkles size={14} className="mt-1 shrink-0 text-zinc-400" aria-hidden="true" />
+              <span>{prompt}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -237,10 +333,10 @@ function MessageBubble({ message }: { message: Message }) {
             href={message.receiptUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 self-start text-[11px] text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            className="inline-flex items-center gap-1 self-start rounded text-[11px] text-zinc-500 transition hover:text-zinc-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-100"
           >
             <span>View receipt on Celoscan</span>
-            <IconExternalLink size={12} />
+            <IconExternalLink size={12} aria-hidden="true" />
           </a>
         ) : null}
       </div>
@@ -248,24 +344,32 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
-function TypingIndicator() {
+function TypingIndicator({ label }: { label: string }) {
   return (
-    <li className="flex gap-2" aria-live="polite">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800">
+    <li className="flex gap-2" aria-live="polite" aria-label={label}>
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800"
+        aria-hidden="true"
+      >
         <IconRobot size={16} />
       </span>
-      <div className="rounded-2xl bg-zinc-100 px-3.5 py-2 text-sm text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-        <span className="inline-flex items-center gap-1">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-          <span
-            className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"
-            style={{ animationDelay: "150ms" }}
-          />
-          <span
-            className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"
-            style={{ animationDelay: "300ms" }}
-          />
-        </span>
+      <div className="flex flex-col gap-1">
+        <div className="rounded-2xl bg-zinc-100 px-3.5 py-2 text-sm text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+          <span className="inline-flex items-center gap-1" aria-hidden="true">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+            <span
+              className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"
+              style={{ animationDelay: "150ms" }}
+            />
+            <span
+              className="h-1.5 w-1.5 animate-pulse rounded-full bg-current"
+              style={{ animationDelay: "300ms" }}
+            />
+          </span>
+        </div>
+        {label ? (
+          <span className="px-1 text-[11px] text-zinc-400 dark:text-zinc-500">{label}</span>
+        ) : null}
       </div>
     </li>
   );
