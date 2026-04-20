@@ -50,6 +50,14 @@ export type ContractSummary = {
    */
   powerFunctions?: string[];
   proxy?: { isProxy: true; implementation?: Address };
+  /**
+   * Recent activity for this address (native + ERC-20). Populated for every
+   * contract block — covers smart contract wallets (EIP-7702, ERC-4337) and
+   * other on-chain actors whose tx history is the meaningful info, not just
+   * source code metadata.
+   */
+  recentTxs?: EoaRecentTx[];
+  totalRecent?: number;
 };
 
 export type EoaRecentTx = {
@@ -312,14 +320,16 @@ async function fetchCreationInfo(
 async function fetchContractSummary(
   address: Address,
 ): Promise<ContractSummary | null> {
-  const [sourceResult, creationResult, ownerResult] = await Promise.all([
-    etherscan.getSourceCode(address).catch((err: unknown) => {
-      console.warn(`[chain-context] getSourceCode(${address}) failed:`, err);
-      return null;
-    }),
-    fetchCreationInfo(address),
-    readOwner(address),
-  ]);
+  const [sourceResult, creationResult, ownerResult, txsResult] =
+    await Promise.all([
+      etherscan.getSourceCode(address).catch((err: unknown) => {
+        console.warn(`[chain-context] getSourceCode(${address}) failed:`, err);
+        return null;
+      }),
+      fetchCreationInfo(address),
+      readOwner(address),
+      fetchRecentTxs(address),
+    ]);
 
   if (!sourceResult) return null;
   const entry = sourceResult[0];
@@ -358,25 +368,30 @@ async function fetchContractSummary(
     owner: ownerResult,
     powerFunctions,
     proxy,
+    recentTxs: txsResult.txs,
+    totalRecent: txsResult.total,
   };
 }
 
 const MAX_EOA_TXS = 10;
 
-async function fetchEoaSummary(address: Address): Promise<EoaSummary | null> {
+async function fetchRecentTxs(
+  address: Address,
+  limit = MAX_EOA_TXS,
+): Promise<{ txs: EoaRecentTx[]; total: number }> {
   const [natives, tokens] = await Promise.all([
-    etherscan.getTxList(address, MAX_EOA_TXS).catch((err: unknown) => {
+    etherscan.getTxList(address, limit).catch((err: unknown) => {
       console.warn(`[chain-context] getTxList(${address}) failed:`, err);
       return [];
     }),
-    etherscan.getTokenTxList(address, MAX_EOA_TXS).catch((err: unknown) => {
+    etherscan.getTokenTxList(address, limit).catch((err: unknown) => {
       console.warn(`[chain-context] getTokenTxList(${address}) failed:`, err);
       return [];
     }),
   ]);
   if (process.env.NODE_ENV !== "production") {
     console.log(
-      `[chain-context] fetchEoaSummary ${address}: ${natives.length} native, ${tokens.length} token`,
+      `[chain-context] fetchRecentTxs ${address}: ${natives.length} native, ${tokens.length} token`,
     );
   }
 
@@ -417,11 +432,12 @@ async function fetchEoaSummary(address: Address): Promise<EoaSummary | null> {
     (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
   );
 
-  return {
-    address,
-    recentTxs: merged.slice(0, MAX_EOA_TXS),
-    totalRecent: merged.length,
-  };
+  return { txs: merged.slice(0, limit), total: merged.length };
+}
+
+async function fetchEoaSummary(address: Address): Promise<EoaSummary | null> {
+  const { txs, total } = await fetchRecentTxs(address);
+  return { address, recentTxs: txs, totalRecent: total };
 }
 
 async function fetchAddressBlock(

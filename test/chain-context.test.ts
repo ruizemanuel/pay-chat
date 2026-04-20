@@ -345,8 +345,10 @@ describe("enrichContext — address path", () => {
     getBlock.mockReset();
     readContract.mockReset();
     getSourceCode.mockReset();
-    getTxList.mockReset();
-    getTokenTxList.mockReset();
+    // Default tx list mocks to empty so contract tests that don't care about
+    // activity don't crash the now-always-on fetchRecentTxs path.
+    getTxList.mockReset().mockResolvedValue([]);
+    getTokenTxList.mockReset().mockResolvedValue([]);
     getContractCreation.mockReset();
   });
 
@@ -423,6 +425,48 @@ describe("enrichContext — address path", () => {
       expect(blocks[0].data.name).toBeUndefined();
       expect(blocks[0].data.powerFunctions).toBeUndefined();
       expect(blocks[0].data.owner).toBeUndefined();
+    }
+  });
+
+  it("includes recentTxs in contract block (smart wallet / EIP-7702 case)", async () => {
+    // A thirdweb server wallet has bytecode but no verified source — what
+    // matters is its tx history, not the (empty) source metadata. The
+    // contract block should always carry recent activity.
+    getBytecode.mockResolvedValue("0xef0100..."); // EIP-7702 delegated
+    getSourceCode.mockResolvedValue([
+      {
+        SourceCode: "",
+        ABI: "Contract source code not verified",
+        ContractName: "",
+        CompilerVersion: "",
+        OptimizationUsed: "",
+        Proxy: "0",
+        Implementation: "",
+      },
+    ]);
+    getContractCreation.mockResolvedValue([]);
+    readContract.mockRejectedValue(new Error());
+    getTokenTxList.mockResolvedValue([
+      {
+        hash: "0xpayquerytx",
+        blockNumber: "1",
+        timeStamp: "1700000000",
+        from: "0xba98c90d32C2261705D5985f9dD7627BD6676171",
+        to: CONTRACT,
+        value: "20000",
+        contractAddress: USDT.toLowerCase(),
+        tokenName: "Tether USD",
+        tokenSymbol: "USD₮",
+        tokenDecimal: "6",
+      },
+    ]);
+
+    const blocks = await enrichContext(`what is ${CONTRACT}?`);
+    if (blocks[0].kind === "contract") {
+      expect(blocks[0].data.verified).toBe(false);
+      expect(blocks[0].data.recentTxs).toHaveLength(1);
+      expect(blocks[0].data.recentTxs![0].valueLabel).toBe("0.02 USD₮");
+      expect(blocks[0].data.totalRecent).toBe(1);
     }
   });
 
