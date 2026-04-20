@@ -207,12 +207,21 @@ export async function fetchTxSummary(hash: Hash): Promise<TxSummary | null> {
   };
 }
 
-async function isContract(address: Address): Promise<boolean> {
+type AddressKind = "eoa" | "contract" | "smart-wallet";
+
+async function classifyAddress(address: Address): Promise<AddressKind> {
   try {
     const bytecode = await publicClient.getBytecode({ address });
-    return typeof bytecode === "string" && bytecode !== "0x" && bytecode.length > 2;
+    if (!bytecode || bytecode === "0x" || bytecode.length <= 2) return "eoa";
+    // EIP-7702 delegation indicator: bytecode is exactly 0xef0100 + 20-byte
+    // delegate address (24 bytes / 50 hex chars). Such an address is still an
+    // EOA at heart — it just has a delegated execution code. Treat it as an
+    // EOA for context purposes (only recent activity matters; there's no
+    // verified source / owner() / creation tx of its own).
+    if (bytecode.toLowerCase().startsWith("0xef0100")) return "smart-wallet";
+    return "contract";
   } catch {
-    return false;
+    return "eoa";
   }
 }
 
@@ -455,12 +464,14 @@ async function fetchEoaSummary(address: Address): Promise<EoaSummary | null> {
 async function fetchAddressBlock(
   address: Address,
 ): Promise<ChainContextBlock | null> {
-  const contract = await isContract(address);
-  if (contract) {
+  const kind = await classifyAddress(address);
+  if (kind === "contract") {
     const data = await fetchContractSummary(address);
     if (!data) return null;
     return { kind: "contract", address, data };
   }
+  // EOA and smart-wallet both go through the EOA path — what's interesting
+  // about them is their on-chain activity, not source / owner / creation.
   const data = await fetchEoaSummary(address);
   if (!data) return null;
   return { kind: "eoa", address, data };

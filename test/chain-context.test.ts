@@ -428,24 +428,12 @@ describe("enrichContext — address path", () => {
     }
   });
 
-  it("includes recentTxs in contract block (smart wallet / EIP-7702 case)", async () => {
-    // A thirdweb server wallet has bytecode but no verified source — what
-    // matters is its tx history, not the (empty) source metadata. The
-    // contract block should always carry recent activity.
-    getBytecode.mockResolvedValue("0xef0100..."); // EIP-7702 delegated
-    getSourceCode.mockResolvedValue([
-      {
-        SourceCode: "",
-        ABI: "Contract source code not verified",
-        ContractName: "",
-        CompilerVersion: "",
-        OptimizationUsed: "",
-        Proxy: "0",
-        Implementation: "",
-      },
-    ]);
-    getContractCreation.mockResolvedValue([]);
-    readContract.mockRejectedValue(new Error());
+  it("routes EIP-7702 delegated EOAs (smart wallets) to the EOA path", async () => {
+    // A thirdweb server wallet has bytecode `0xef0100…` (EIP-7702 delegation)
+    // — what matters is its activity, not source / owner / creation. The
+    // wrapper should classify it as EOA-like and skip the heavy contract
+    // fetches that would otherwise return empty + waste Etherscan budget.
+    getBytecode.mockResolvedValue("0xef0100c9c8d7c5b0e6f3a4..."); // 7702 prefix
     getTokenTxList.mockResolvedValue([
       {
         hash: "0xpayquerytx",
@@ -462,12 +450,15 @@ describe("enrichContext — address path", () => {
     ]);
 
     const blocks = await enrichContext(`what is ${CONTRACT}?`);
-    if (blocks[0].kind === "contract") {
-      expect(blocks[0].data.verified).toBe(false);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].kind).toBe("eoa");
+    if (blocks[0].kind === "eoa") {
       expect(blocks[0].data.recentTxs).toHaveLength(1);
-      expect(blocks[0].data.recentTxs![0].valueLabel).toBe("0.02 USD₮");
-      expect(blocks[0].data.totalRecent).toBe(1);
+      expect(blocks[0].data.recentTxs[0].valueLabel).toBe("0.02 USD₮");
     }
+    // Heavy contract fetches must NOT have been called.
+    expect(getSourceCode).not.toHaveBeenCalled();
+    expect(getContractCreation).not.toHaveBeenCalled();
   });
 
   it("flags upgradeable proxy and includes the implementation address", async () => {

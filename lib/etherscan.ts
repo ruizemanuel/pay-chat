@@ -6,6 +6,37 @@ const BASE_URL = "https://api.etherscan.io/v2/api";
 const CELO_CHAIN_ID = 42220;
 const TIMEOUT_MS = 5000;
 
+/**
+ * Etherscan free tier allows ~5 requests/second. Since chain-context
+ * enrichment can fan out to ~10 parallel calls per /api/chat request
+ * (3 addresses × ~3 calls each + tx-hash fetches), we cap concurrency
+ * here to keep ourselves under the limit instead of relying on retries
+ * after the API has already rate-limited us with NOTOK responses.
+ */
+const MAX_CONCURRENT = 3;
+let inflight = 0;
+const waiters: Array<() => void> = [];
+
+async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (inflight >= MAX_CONCURRENT) {
+    await new Promise<void>((resolve) => {
+      waiters.push(() => {
+        inflight++;
+        resolve();
+      });
+    });
+  } else {
+    inflight++;
+  }
+  try {
+    return await fn();
+  } finally {
+    inflight--;
+    const next = waiters.shift();
+    if (next) next();
+  }
+}
+
 type EtherscanEnvelope<T> = {
   status: "0" | "1";
   message: string;
@@ -117,23 +148,34 @@ async function callOnce<T>(params: Record<string, string>): Promise<T> {
 }
 
 /**
- * Single retry on transient Etherscan errors (api, http, timeout). Generic
- * `NOTOK` responses come back as `code: "api"` and are usually rate-limit
- * hits that clear within a second. `no_key` and `unknown` are not retried.
+ * Up to 2 retries on transient Etherscan errors (api, http, timeout) with
+ * escalating backoff. Generic `NOTOK` responses come back as `code: "api"`
+ * and are usually rate-limit hits that clear within a second or two.
+ * `no_key` and `unknown` are not retried.
  */
 async function call<T>(params: Record<string, string>): Promise<T> {
-  try {
-    return await callOnce<T>(params);
-  } catch (error) {
-    if (
-      error instanceof EtherscanError &&
-      (error.code === "api" || error.code === "http" || error.code === "timeout")
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return callOnce<T>(params);
+  const delays = [0, 500, 1500];
+  let lastError: unknown;
+  for (const delay of delays) {
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    throw error;
+    try {
+      return await withSlot(() => callOnce<T>(params));
+    } catch (error) {
+      if (
+        error instanceof EtherscanError &&
+        (error.code === "api" ||
+          error.code === "http" ||
+          error.code === "timeout")
+      ) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
   }
+  throw lastError;
 }
 
 export const etherscan = {
