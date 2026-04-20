@@ -3,6 +3,7 @@
 import {
   IconAlertTriangle,
   IconExternalLink,
+  IconPlus,
   IconRobot,
   IconSend2,
   IconSparkles,
@@ -229,6 +230,14 @@ export function ChatApp() {
     void send(input);
   }
 
+  function resetChat() {
+    if (isSending) return;
+    setMessages([]);
+    setInput("");
+    setError(null);
+    setStatus("idle");
+  }
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
@@ -236,7 +245,21 @@ export function ChatApp() {
           <IconRobot size={22} aria-hidden="true" />
           <h1 className="text-base font-semibold">{SITE.name}</h1>
         </div>
-        <WalletBadge />
+        <div className="flex items-center gap-2">
+          {messages.length > 0 ? (
+            <button
+              type="button"
+              onClick={resetChat}
+              disabled={isSending}
+              title="Start new chat"
+              aria-label="Start new chat"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+            >
+              <IconPlus size={16} aria-hidden="true" />
+            </button>
+          ) : null}
+          <WalletBadge />
+        </div>
       </header>
 
       <main

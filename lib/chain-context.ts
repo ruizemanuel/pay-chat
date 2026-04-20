@@ -453,7 +453,12 @@ async function fetchRecentTxs(
     (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
   );
 
-  return { txs: merged.slice(0, limit), total: merged.length };
+  // Report `total` as the count of items actually in `txs` (post-slice) so
+  // the LLM doesn't say "20 transactions" when we're only showing 10. The
+  // raw `merged.length` double-counts txs that emit both a native value
+  // transfer and an ERC-20 transfer in the same hash.
+  const limited = merged.slice(0, limit);
+  return { txs: limited, total: limited.length };
 }
 
 async function fetchEoaSummary(address: Address): Promise<EoaSummary | null> {
