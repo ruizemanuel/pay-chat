@@ -15,9 +15,9 @@ export const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> 
  */
 export const SITE = {
   name: "pay-chat",
-  tagline: "AI pay-per-query on Celo",
+  tagline: "AI agent that reads Celo on-chain data",
   description:
-    "AI pay-per-query MiniApp on Celo. Pay $0.02 in USDT per answer — no subscription, no signup.",
+    "AI agent inside MiniPay that reads Celo on-chain data — paste any tx hash or contract address and get a real explanation. $0.02 per answer in USDT, with verifiable on-chain receipts.",
   productionUrl: "https://pay-chat-nine.vercel.app",
   supportUrl: "https://t.me/paychat_support",
   supportLabel: "t.me/paychat_support",

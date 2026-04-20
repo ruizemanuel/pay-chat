@@ -335,9 +335,10 @@ function EmptyState({
         <IconRobot size={28} aria-hidden="true" />
       </span>
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Ask anything onchain</h2>
+        <h2 className="text-lg font-semibold">Ask anything — onchain or off</h2>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Each answer costs {SITE.pricePerQuery} {SITE.paymentToken} and settles on{" "}
+          Paste a Celo tx hash, inspect a contract, or just chat.{" "}
+          {SITE.pricePerQuery} {SITE.paymentToken} per answer, settled on{" "}
           {SITE.network}.
         </p>
       </div>
