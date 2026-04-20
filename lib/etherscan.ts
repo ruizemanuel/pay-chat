@@ -65,7 +65,7 @@ class EtherscanError extends Error {
   }
 }
 
-async function call<T>(params: Record<string, string>): Promise<T> {
+async function callOnce<T>(params: Record<string, string>): Promise<T> {
   const apiKey = process.env.ETHERSCAN_API_KEY;
   if (!apiKey) {
     throw new EtherscanError("ETHERSCAN_API_KEY not set", "no_key");
@@ -114,6 +114,26 @@ async function call<T>(params: Record<string, string>): Promise<T> {
   }
 
   return body.result;
+}
+
+/**
+ * Single retry on transient Etherscan errors (api, http, timeout). Generic
+ * `NOTOK` responses come back as `code: "api"` and are usually rate-limit
+ * hits that clear within a second. `no_key` and `unknown` are not retried.
+ */
+async function call<T>(params: Record<string, string>): Promise<T> {
+  try {
+    return await callOnce<T>(params);
+  } catch (error) {
+    if (
+      error instanceof EtherscanError &&
+      (error.code === "api" || error.code === "http" || error.code === "timeout")
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return callOnce<T>(params);
+    }
+    throw error;
+  }
 }
 
 export const etherscan = {

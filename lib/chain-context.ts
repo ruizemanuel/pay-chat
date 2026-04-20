@@ -331,8 +331,11 @@ async function fetchContractSummary(
       fetchRecentTxs(address),
     ]);
 
-  if (!sourceResult) return null;
-  const entry = sourceResult[0];
+  // Partial data is still useful: if the source-code lookup hits a transient
+  // Etherscan error but we got creator / owner / recent txs, return those
+  // instead of dropping the whole block (which would force the LLM to admit
+  // it has nothing to say about an address the user explicitly asked about).
+  const entry = sourceResult?.[0];
   const verified =
     typeof entry?.SourceCode === "string" && entry.SourceCode.length > 0;
 
@@ -356,6 +359,15 @@ async function fetchContractSummary(
       (Date.now() - Date.parse(creationResult.createdAt)) / 86_400_000,
     );
   }
+
+  // Only bail entirely if we got literally nothing — every parallel source
+  // failed AND the address has no on-chain activity to summarize.
+  const hasAnything =
+    sourceResult !== null ||
+    creationResult !== null ||
+    ownerResult !== undefined ||
+    txsResult.total > 0;
+  if (!hasAnything) return null;
 
   return {
     address,
